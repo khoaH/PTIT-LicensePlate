@@ -6,53 +6,66 @@ import shutil
 
 
 
+#khởi tạo kích thước của kí tự trên biển số
+digit_w =30
+digit_h =60
+def findLP_img(OriImg): #find License plate
+    # xóa thư mục (reset) "number" để lưu số đã cắt
+    # shutil.rmtree('./number', ignore_errors=True)
+    # tạo thư mục number
+    # os.mkdir('number')
+
+    #Đọc file pre-train
+    plate_cascade = cv2.CascadeClassifier("./cascade.xml")
+    #nhận diện biển trong img
+    plates = plate_cascade.detectMultiScale(OriImg, 1.1, 3)
+    #Tạo ảnh trước khi cắt
+    img = OriImg
+    #in vùng chứa biển số và cắt
+    for (x,y,w,h) in plates:
+        cv2.rectangle(OriImg,(x,y),(x+w,y+h),(255,0,0),1)
+        img = OriImg[y:y+h, x:x+w]
+    
+    # cv2.imshow("Original image", OriImg)
+    # cv2.imshow("crop",img)
+    return img
 
 
-# xóa thư mục (reset) "number" để lưu số đã cắt
-# shutil.rmtree('./number', ignore_errors=True)
-# tạo thư mục number
-# os.mkdir('number')
+def Pretreatment(imgLP):
 
-
-def DetectNum(img):
-    #khởi tạo kích thước của kí tự trên biển số
-    digit_w =30
-    digit_h =60
-
-    #Load file train đọc số
-    model_svm =cv2.ml.SVM_load('svm.xml')
-    (himg,wimg,chanel)=img.shape
-
-    if(wimg/himg >2):
-        img=cv2.resize(img,dsize=(1000,200))
-    else:
-        img=cv2.resize(img,dsize=(800,500))
     #tiền xử lí ảnh
-    grayImg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    grayImg = cv2.cvtColor(imgLP, cv2.COLOR_BGR2GRAY)
     noise_removal = cv2.bilateralFilter(grayImg,9,75,75)
-    # noise_removal = cv2.bilateralFilter(grayImg,9,75,75)
     # equal_histogram = cv2.equalizeHist(noise_removal)
     ret, binImg = cv2.threshold(grayImg, 100, 255, cv2.THRESH_BINARY_INV+ cv2.THRESH_OTSU)
     kerel3 = cv2.getStructuringElement(cv2.MORPH_RECT,(4,4))
     binImg = cv2.morphologyEx(binImg,cv2.MORPH_DILATE,kerel3)
+    return binImg
 
+def contours_detect(binImg):
     #tìm contour
-    cnts, _ = cv2.findContours(binImg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    #cnts = imutils.grab_contours(cnts)
-    # print (cnts)
+    #cnts, _ = cv2.findContours(binImg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts, _ = cv2.findContours(binImg, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
     #tạo ảnh tạm để giữ ảnh gốc k bị edit
+    return cnts
+def draw_rects_on_img(img, cnts):
     imgtemp=img.copy()
     cv2.drawContours(imgtemp,cnts,-1,(0,120,0),1)
+    return imgtemp
 
-    cv2.imshow('Khoa',imgtemp)
+    #cv2.imshow('Number on License plate ',imgtemp)
     # print (cnts);
-    #khởi tạo
-    plate_number=''
+
+#khởi tạo 
+plate_number=''
+coorarr=[]
+
+def find_number(cnts,binImg,imgtemp):
     count=0
-    coorarr=[]
-
-
-    #duyệt từng cái contour
+    global plate_number
+    global coorarr
+    model_svm =cv2.ml.SVM_load('svm.xml')
+#duyệt từng cái contour
     for c in (cnts):
         x,y,w,h=cv2.boundingRect(c)
         cv2.rectangle(imgtemp, (x, y), (x + w, y + h), (0, 255, 0), 1)
@@ -94,16 +107,15 @@ def DetectNum(img):
             plate_number +=result+' '
             #này dùng viết lên màn hình thui ae
             cv2.putText(imgtemp,result,(x-50,y+50),cv2.FONT_HERSHEY_COMPLEX,3,(0, 255, 0), 2, cv2.LINE_AA)
+    return imgtemp
 
+def sortNumber():
+    global plate_number
+    global coorarr
     #do t thêm dấu cách nên t cắt dấu cắt dư
     stringarr=plate_number.strip()
     #tạo thành 1 cái list trong python 
     stringarr=stringarr.split(" ")
-
-    # print('stringarr chua sap xep',stringarr)
-    # print('coor chua sap xep', coorarr)
-
-
     #sắp xếp lại các con số theo y
     for i in range(len(coorarr)):
         #so sánh tọa độ y
@@ -123,40 +135,34 @@ def DetectNum(img):
                 tempp=coorarr[i]
                 coorarr[i]=coorarr[j]
                 coorarr[j]=tempp
-                
-
-    # print('stringarr da sap xep',stringarr)
-    # print('coor da sap xep', coorarr)
+            
     #sau khi sắp xếp tao cho nó thành string lại nè
     plate_number=''.join(stringarr)
-    print('bien so xe: ',plate_number)
+    return plate_number
 
+if __name__ == "__main__":
+
+    OriImg = cv2.imread('./Bike_back/0465.jpg',1);
+    #Tìm biển số
+    img=findLP_img(OriImg);
+    #resize lại hình
+    (himg,wimg,chanel)=img.shape
+    if(wimg/himg >2):
+        img=cv2.resize(img,dsize=(1000,200))
+    else:
+        img=cv2.resize(img,dsize=(800,500))
+    cv2.imshow('Image',img)
+
+    binImg=Pretreatment(img)
+    cnts=contours_detect(binImg)
+    imgtemp=draw_rects_on_img(img,cnts)
+    imgtemp=find_number(cnts,binImg,imgtemp)
+    sort_number = sortNumber();
 
     cv2.imshow('binary',binImg)
     cv2.imshow('result',imgtemp)
-    cv2.waitKey()
-
+    print('bien so xe: ',sort_number)
     #mở thư mục number để xe,
     # os.startfile('number')
-
+    cv2.waitKey()
     cv2.destroyAllWindows()
-    return plate_number
-
-#Đọc Ảnh, file pre-train
-OriImg = cv2.imread('./Bike_back/050112.jpg',1);
-plate_cascade = cv2.CascadeClassifier("./cascade.xml")
-#nhận diện biển trong img
-plates = plate_cascade.detectMultiScale(OriImg, 1.1, 3)
-#Tạo ảnh trước khi cắt
-img = OriImg
-#in vùng chứa biển số và cắt
-for (x,y,w,h) in plates:
-    cv2.rectangle(OriImg,(x,y),(x+w,y+h),(255,0,0),1)
-    img = OriImg[y:y+h,x:x+w]
-    plate_num = DetectNum(img)
-    cv2.putText(OriImg, plate_num, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255,0,0), 2)
-
-cv2.imshow("Original image", OriImg)
-# cv2.imshow("crop",img)
-cv2.waitKey()
-cv2.destroyAllWindows()
